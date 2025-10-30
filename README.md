@@ -182,3 +182,120 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: 'bold' },
   memoItem: { backgroundColor: '#f9f9f9', padding: 10, marginVertical: 5, borderRadius: 8 },
 });
+// App.tsx
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, TextInput, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+type MemoItem = {
+  id: string;
+  text: string;
+  deleted: boolean;
+  deletedAt?: number;
+};
+
+export default function App() {
+  const [memo, setMemo] = useState('');
+  const [memos, setMemos] = useState<MemoItem[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
+
+  // 🔹メモを保存（通常 or 捨てる）
+  const saveMemo = async (discard = false) => {
+    if (!memo.trim()) return;
+    const newMemo: MemoItem = {
+      id: Date.now().toString(),
+      text: memo,
+      deleted: discard,
+      deletedAt: discard ? Date.now() : undefined,
+    };
+    const updated = [...memos, newMemo];
+    setMemos(updated);
+    await AsyncStorage.setItem('memos', JSON.stringify(updated));
+    setMemo('');
+  };
+
+  // 🔹30日経過したメモを削除
+  const cleanupTrash = async () => {
+    const now = Date.now();
+    const filtered = memos.filter(m => !(m.deleted && m.deletedAt && now - m.deletedAt > 30 * 24 * 60 * 60 * 1000));
+    if (filtered.length !== memos.length) {
+      setMemos(filtered);
+      await AsyncStorage.setItem('memos', JSON.stringify(filtered));
+    }
+  };
+
+  // 🔹ゴミ箱から復元
+  const restoreMemo = async (id: string) => {
+    const updated = memos.map(m => (m.id === id ? { ...m, deleted: false, deletedAt: undefined } : m));
+    setMemos(updated);
+    await AsyncStorage.setItem('memos', JSON.stringify(updated));
+  };
+
+  // 🔹初期ロード＋定期クリーンアップ
+  useEffect(() => {
+    (async () => {
+      const data = await AsyncStorage.getItem('memos');
+      if (data) setMemos(JSON.parse(data));
+    })();
+    cleanupTrash();
+  }, []);
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>{showTrash ? '🗑 ゴミ箱' : '📝 メモ一覧'}</Text>
+
+      {!showTrash && (
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder="メモを入力..."
+            value={memo}
+            onChangeText={setMemo}
+          />
+          <View style={styles.buttonRow}>
+            <TouchableOpacity style={styles.saveButton} onPress={() => saveMemo(false)}>
+              <Text style={styles.buttonText}>自動保存</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.trashButton} onPress={() => saveMemo(true)}>
+              <Text style={styles.buttonText}>捨てて保存</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      <FlatList
+        data={memos.filter(m => m.deleted === showTrash)}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.memoItem}
+            onPress={() => {
+              if (showTrash) restoreMemo(item.id);
+            }}>
+            <Text style={styles.memoText}>{item.text}</Text>
+            {showTrash && <Text style={styles.restoreHint}>（タップで復元）</Text>}
+          </TouchableOpacity>
+        )}
+      />
+
+      <TouchableOpacity style={styles.switchButton} onPress={() => setShowTrash(!showTrash)}>
+        <Text style={styles.switchText}>{showTrash ? '📄 メモ一覧へ戻る' : '🗑 ゴミ箱を見る'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
+  title: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginVertical: 20 },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 10 },
+  buttonRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 },
+  saveButton: { backgroundColor: '#007bff', padding: 10, borderRadius: 8, width: '45%', alignItems: 'center' },
+  trashButton: { backgroundColor: '#dc3545', padding: 10, borderRadius: 8, width: '45%', alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: 'bold' },
+  memoItem: { backgroundColor: '#f9f9f9', padding: 10, marginVertical: 5, borderRadius: 8 },
+  memoText: { fontSize: 16 },
+  restoreHint: { fontSize: 12, color: '#555' },
+  switchButton: { marginTop: 20, alignItems: 'center' },
+  switchText: { color: '#007bff', fontSize: 16 },
+});
